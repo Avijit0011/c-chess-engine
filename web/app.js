@@ -658,7 +658,8 @@ function renderBoard() {
             const piece = game.board[sq];
             if (piece) {
                 const pieceEl = document.createElement('span');
-                pieceEl.className = 'piece';
+                const pColor = game.getPieceColor(piece);
+                pieceEl.className = `piece ${pColor === 'w' ? 'piece-white' : 'piece-black'}`;
                 pieceEl.textContent = PIECES[piece] || '';
                 sqEl.appendChild(pieceEl);
             }
@@ -851,6 +852,25 @@ function updateUI(engineScore = 0) {
     const isWhiteTurn = game.side === 'w';
     document.getElementById('bottomTimer').classList.toggle('active', isWhiteTurn);
     document.getElementById('topTimer').classList.toggle('active', !isWhiteTurn);
+
+    const topNameEl = document.getElementById('topPlayerName');
+    const bottomNameEl = document.getElementById('bottomPlayerName');
+
+    if (game.mode === 'human_vs_human') {
+        topNameEl.textContent = 'Player 2 (Black)';
+        bottomNameEl.textContent = 'Player 1 (White)';
+    } else if (game.mode === 'engine_vs_engine') {
+        topNameEl.textContent = 'C Engine 2 (Black)';
+        bottomNameEl.textContent = 'C Engine 1 (White)';
+    } else {
+        if (game.playerColor === 'w') {
+            topNameEl.textContent = 'C Engine (Black)';
+            bottomNameEl.textContent = 'Player (White)';
+        } else {
+            topNameEl.textContent = 'Player (White)';
+            bottomNameEl.textContent = 'C Engine (Black)';
+        }
+    }
 
     // Update Eval Bar
     let scoreDisplay = '+0.0';
