@@ -1,4 +1,4 @@
-// C Chess Engine - Web Game Client Logic
+// C Chess Engine - Web Game Client Logic (Strict Chess Rules Enforcement)
 
 const PIECES = {
     P: '♙', N: '♘', B: '♗', R: '♖', Q: '♕', K: '♔',
@@ -66,25 +66,24 @@ class SoundEffects {
 
 const sfx = new SoundEffects();
 
-// Chess Game State
+// Chess Game Logic Engine
 class ChessGame {
     constructor() {
         this.board = new Array(64).fill(null);
-        this.side = 'w'; // 'w' or 'b'
+        this.side = 'w';
         this.castling = { K: true, Q: true, k: true, q: true };
-        this.enpassant = null; // square index 0..63
+        this.enpassant = null;
         this.halfmove = 0;
         this.fullmove = 1;
         this.history = [];
         this.moveList = [];
         this.isFlipped = false;
         this.playerColor = 'w';
-        this.mode = 'human_vs_engine'; // 'human_vs_engine', 'engine_vs_engine', 'human_vs_human'
+        this.mode = 'human_vs_engine';
         this.depth = 4;
         this.selectedSquare = null;
         this.legalTargets = [];
         this.lastMove = null;
-        this.pendingPromotion = null;
         this.isSearching = false;
 
         this.loadFen(START_FEN);
@@ -199,6 +198,253 @@ class ChessGame {
         const f = alg.charCodeAt(0) - 97;
         const r = parseInt(alg[1], 10) - 1;
         return r * 8 + f;
+    }
+
+    // ==========================================
+    // STRICT CHESS MOVE GENERATION & LEGALITY
+    // ==========================================
+    getLegalMovesForSquare(sq) {
+        const piece = this.board[sq];
+        if (!piece || this.getPieceColor(piece) !== this.side) return [];
+
+        const pseudoMoves = this.getPseudoLegalMoves(sq);
+        const legalMoves = [];
+
+        for (const targetSq of pseudoMoves) {
+            if (this.isMoveLegal(sq, targetSq)) {
+                legalMoves.push(targetSq);
+            }
+        }
+
+        return legalMoves;
+    }
+
+    getPseudoLegalMoves(sq) {
+        const piece = this.board[sq];
+        if (!piece) return [];
+
+        const color = this.getPieceColor(piece);
+        const type = piece.toLowerCase();
+        const r = Math.floor(sq / 8);
+        const f = sq % 8;
+        const targets = [];
+
+        if (type === 'p') {
+            const dir = color === 'w' ? 1 : -1;
+            const startRank = color === 'w' ? 1 : 6;
+
+            // Single Push
+            const f1 = sq + dir * 8;
+            if (f1 >= 0 && f1 < 64 && !this.board[f1]) {
+                targets.push(f1);
+                // Double Push
+                const f2 = sq + dir * 16;
+                if (r === startRank && !this.board[f2]) {
+                    targets.push(f2);
+                }
+            }
+
+            // Captures
+            const capFiles = [f - 1, f + 1];
+            for (const cf of capFiles) {
+                if (cf >= 0 && cf <= 7) {
+                    const capSq = (r + dir) * 8 + cf;
+                    if (capSq >= 0 && capSq < 64) {
+                        const targetP = this.board[capSq];
+                        if (targetP && this.getPieceColor(targetP) !== color) {
+                            targets.push(capSq);
+                        } else if (capSq === this.enpassant) {
+                            targets.push(capSq);
+                        }
+                    }
+                }
+            }
+        } else if (type === 'n') {
+            const dr = [2, 2, 1, 1, -1, -1, -2, -2];
+            const df = [1, -1, 2, -2, 2, -2, 1, -1];
+            for (let i = 0; i < 8; i++) {
+                const tr = r + dr[i];
+                const tf = f + df[i];
+                if (tr >= 0 && tr <= 7 && tf >= 0 && tf <= 7) {
+                    const tSq = tr * 8 + tf;
+                    const targetP = this.board[tSq];
+                    if (!targetP || this.getPieceColor(targetP) !== color) {
+                        targets.push(tSq);
+                    }
+                }
+            }
+        } else if (type === 'b' || type === 'r' || type === 'q') {
+            const directions = [];
+            if (type === 'b' || type === 'q') {
+                directions.push([1, 1], [1, -1], [-1, 1], [-1, -1]);
+            }
+            if (type === 'r' || type === 'q') {
+                directions.push([1, 0], [-1, 0], [0, 1], [0, -1]);
+            }
+
+            for (const [dr, df] of directions) {
+                let tr = r + dr;
+                let tf = f + df;
+                while (tr >= 0 && tr <= 7 && tf >= 0 && tf <= 7) {
+                    const tSq = tr * 8 + tf;
+                    const targetP = this.board[tSq];
+                    if (!targetP) {
+                        targets.push(tSq);
+                    } else {
+                        if (this.getPieceColor(targetP) !== color) {
+                            targets.push(tSq);
+                        }
+                        break;
+                    }
+                    tr += dr;
+                    tf += df;
+                }
+            }
+        } else if (type === 'k') {
+            const dr = [1, 1, 1, 0, 0, -1, -1, -1];
+            const df = [-1, 0, 1, -1, 1, -1, 0, 1];
+            for (let i = 0; i < 8; i++) {
+                const tr = r + dr[i];
+                const tf = f + df[i];
+                if (tr >= 0 && tr <= 7 && tf >= 0 && tf <= 7) {
+                    const tSq = tr * 8 + tf;
+                    const targetP = this.board[tSq];
+                    if (!targetP || this.getPieceColor(targetP) !== color) {
+                        targets.push(tSq);
+                    }
+                }
+            }
+
+            // Castling
+            const enemyColor = color === 'w' ? 'b' : 'w';
+            if (color === 'w') {
+                if (this.castling.K && !this.board[5] && !this.board[6]) {
+                    if (!this.isSquareAttacked(4, enemyColor) && !this.isSquareAttacked(5, enemyColor) && !this.isSquareAttacked(6, enemyColor)) {
+                        targets.push(6);
+                    }
+                }
+                if (this.castling.Q && !this.board[1] && !this.board[2] && !this.board[3]) {
+                    if (!this.isSquareAttacked(4, enemyColor) && !this.isSquareAttacked(3, enemyColor) && !this.isSquareAttacked(2, enemyColor)) {
+                        targets.push(2);
+                    }
+                }
+            } else {
+                if (this.castling.k && !this.board[61] && !this.board[62]) {
+                    if (!this.isSquareAttacked(60, enemyColor) && !this.isSquareAttacked(61, enemyColor) && !this.isSquareAttacked(62, enemyColor)) {
+                        targets.push(62);
+                    }
+                }
+                if (this.castling.q && !this.board[57] && !this.board[58] && !this.board[59]) {
+                    if (!this.isSquareAttacked(60, enemyColor) && !this.isSquareAttacked(59, enemyColor) && !this.isSquareAttacked(58, enemyColor)) {
+                        targets.push(58);
+                    }
+                }
+            }
+        }
+
+        return targets;
+    }
+
+    isSquareAttacked(sq, attackerColor, tempBoard = this.board) {
+        const r = Math.floor(sq / 8);
+        const f = sq % 8;
+
+        // Pawns
+        const pawnDir = attackerColor === 'w' ? -1 : 1;
+        const enemyPawn = attackerColor === 'w' ? 'P' : 'p';
+        for (const cf of [f - 1, f + 1]) {
+            if (cf >= 0 && cf <= 7) {
+                const pSq = (r + pawnDir) * 8 + cf;
+                if (pSq >= 0 && pSq < 64 && tempBoard[pSq] === enemyPawn) return true;
+            }
+        }
+
+        // Knights
+        const enemyKnight = attackerColor === 'w' ? 'N' : 'n';
+        const knightDr = [2, 2, 1, 1, -1, -1, -2, -2];
+        const knightDf = [1, -1, 2, -2, 2, -2, 1, -1];
+        for (let i = 0; i < 8; i++) {
+            const tr = r + knightDr[i];
+            const tf = f + knightDf[i];
+            if (tr >= 0 && tr <= 7 && tf >= 0 && tf <= 7) {
+                if (tempBoard[tr * 8 + tf] === enemyKnight) return true;
+            }
+        }
+
+        // King
+        const enemyKing = attackerColor === 'w' ? 'K' : 'k';
+        const kingDr = [1, 1, 1, 0, 0, -1, -1, -1];
+        const kingDf = [-1, 0, 1, -1, 1, -1, 0, 1];
+        for (let i = 0; i < 8; i++) {
+            const tr = r + kingDr[i];
+            const tf = f + kingDf[i];
+            if (tr >= 0 && tr <= 7 && tf >= 0 && tf <= 7) {
+                if (tempBoard[tr * 8 + tf] === enemyKing) return true;
+            }
+        }
+
+        // Sliders (Bishops, Rooks, Queens)
+        const enemyBishop = attackerColor === 'w' ? 'B' : 'b';
+        const enemyRook = attackerColor === 'w' ? 'R' : 'r';
+        const enemyQueen = attackerColor === 'w' ? 'Q' : 'q';
+
+        // Diagonals
+        for (const [dr, df] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+            let tr = r + dr;
+            let tf = f + df;
+            while (tr >= 0 && tr <= 7 && tf >= 0 && tf <= 7) {
+                const p = tempBoard[tr * 8 + tf];
+                if (p) {
+                    if (p === enemyBishop || p === enemyQueen) return true;
+                    break;
+                }
+                tr += dr; tf += df;
+            }
+        }
+
+        // Orthogonals
+        for (const [dr, df] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            let tr = r + dr;
+            let tf = f + df;
+            while (tr >= 0 && tr <= 7 && tf >= 0 && tf <= 7) {
+                const p = tempBoard[tr * 8 + tf];
+                if (p) {
+                    if (p === enemyRook || p === enemyQueen) return true;
+                    break;
+                }
+                tr += dr; tf += df;
+            }
+        }
+
+        return false;
+    }
+
+    isMoveLegal(from, to) {
+        const tempBoard = [...this.board];
+        const piece = tempBoard[from];
+        tempBoard[from] = null;
+        tempBoard[to] = piece;
+
+        // Handle En Passant in temp board
+        if (piece.toLowerCase() === 'p' && to === this.enpassant) {
+            const epCapSq = this.side === 'w' ? to - 8 : to + 8;
+            tempBoard[epCapSq] = null;
+        }
+
+        // Find King
+        const kingChar = this.side === 'w' ? 'K' : 'k';
+        let kingSq = -1;
+        for (let i = 0; i < 64; i++) {
+            if (tempBoard[i] === kingChar) {
+                kingSq = i;
+                break;
+            }
+        }
+
+        if (kingSq === -1) return false;
+
+        const enemyColor = this.side === 'w' ? 'b' : 'w';
+        return !this.isSquareAttacked(kingSq, enemyColor, tempBoard);
     }
 
     makeUciMove(uciMove) {
@@ -438,8 +684,8 @@ function handleSquareClick(sq) {
     if (game.selectedSquare === null) {
         if (piece && pieceColor === game.side) {
             game.selectedSquare = sq;
-            // Generate dummy targets for UI visualization
-            game.legalTargets = getPseudoLegalTargets(sq);
+            // Generate STRICT LEGAL MOVES for piece
+            game.legalTargets = game.getLegalMovesForSquare(sq);
             renderBoard();
         }
     } else {
@@ -452,8 +698,13 @@ function handleSquareClick(sq) {
 
         if (piece && pieceColor === game.side) {
             game.selectedSquare = sq;
-            game.legalTargets = getPseudoLegalTargets(sq);
+            game.legalTargets = game.getLegalMovesForSquare(sq);
             renderBoard();
+            return;
+        }
+
+        // Verify that target square is strictly legal
+        if (!game.legalTargets.includes(sq)) {
             return;
         }
 
@@ -475,20 +726,6 @@ function handleSquareClick(sq) {
 
         executeUserMove(from, to, null);
     }
-}
-
-function getPseudoLegalTargets(sq) {
-    // Basic target generator for UI highlight
-    const targets = [];
-    for (let t = 0; t < 64; t++) {
-        if (t !== sq) {
-            const targetPiece = game.board[t];
-            if (!targetPiece || game.getPieceColor(targetPiece) !== game.side) {
-                targets.push(t);
-            }
-        }
-    }
-    return targets;
 }
 
 function executeUserMove(from, to, promoChar) {

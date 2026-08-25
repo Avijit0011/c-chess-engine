@@ -161,10 +161,19 @@ const requestHandler = (req, res) => {
 // Start Server & Engine
 const server = http.createServer(requestHandler);
 
+server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+        console.log(`[Server] Port ${PORT} is in use, trying port 3001...`);
+        server.listen(3001);
+    } else {
+        console.error('[Server Error]', err);
+    }
+});
+
 server.listen(PORT, () => {
     console.log(`\n =======================================================`);
     console.log(`   C CHESS ENGINE WEB GAME RUNNING!`);
-    console.log(`   Open in browser: http://localhost:${PORT}`);
+    console.log(`   Open in browser: http://localhost:${server.address().port}`);
     console.log(` =======================================================\n`);
     startEngine();
 });
