@@ -1,0 +1,13 @@
+# Compiled Executables & Objects
+*.exe
+*.out
+*.app
+*.o
+*.obj
+
+# Editor & OS files
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
