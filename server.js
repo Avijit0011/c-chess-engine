@@ -20,7 +20,7 @@ function startEngine() {
         engineOutputBuffer += text;
 
         if (currentCallback) {
-            currentCallback(text);
+            currentCallback();
         }
     });
 
@@ -31,6 +31,12 @@ function startEngine() {
     engineProcess.on('close', (code) => {
         console.log(`[Engine] Process exited with code ${code}`);
         engineProcess = null;
+        isEngineSearching = false;
+        if (currentCallback) {
+            const cb = currentCallback;
+            currentCallback = null;
+            cb();
+        }
     });
 
     // Initialize UCI protocol
@@ -51,10 +57,14 @@ let searchTimeout = null;
 function queryEngineMove(fen, depth, callback) {
     if (!engineProcess) startEngine();
 
-    if (isEngineSearching && searchTimeout) {
+    if (searchTimeout) {
         clearTimeout(searchTimeout);
+        searchTimeout = null;
     }
     isEngineSearching = true;
+
+    // Reset output buffer prior to issuing position command
+    engineOutputBuffer = '';
 
     let lastScore = 0;
     let lastPv = [];
@@ -68,7 +78,7 @@ function queryEngineMove(fen, depth, callback) {
         isEngineSearching = false;
     };
 
-    const onData = (data) => {
+    const checkOutput = () => {
         const lines = engineOutputBuffer.split('\n');
         for (let line of lines) {
             line = line.trim();
@@ -114,8 +124,7 @@ function queryEngineMove(fen, depth, callback) {
         });
     }, 10000);
 
-    engineOutputBuffer = '';
-    currentCallback = onData;
+    currentCallback = checkOutput;
 
     sendEngineCommand(`position fen ${fen}`);
     sendEngineCommand(`go depth ${depth}`);

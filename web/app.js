@@ -815,7 +815,7 @@ function executeUserMove(from, to, promoChar) {
     updateUI();
 
     if (success && !game.isGameOver) {
-        checkEngineTurn();
+        setTimeout(checkEngineTurn, 100);
     }
 }
 
@@ -840,7 +840,7 @@ function showPromotionModal(callback) {
 }
 
 function checkEngineTurn() {
-    if (game.isGameOver || game.isSearching || game.mode === 'human_vs_human') return;
+    if (game.isGameOver || game.mode === 'human_vs_human') return;
 
     const isEngineTurn = (game.mode === 'engine_vs_engine') || (game.mode === 'human_vs_engine' && game.side !== game.playerColor);
 
@@ -850,7 +850,12 @@ function checkEngineTurn() {
 }
 
 function triggerEngineMove() {
-    if (game.isSearching || game.isGameOver) return;
+    if (game.isGameOver) return;
+    if (game.isSearching) {
+        // Retry shortly if an active search is already running
+        setTimeout(checkEngineTurn, 300);
+        return;
+    }
 
     game.isSearching = true;
     const fen = game.generateFen();
