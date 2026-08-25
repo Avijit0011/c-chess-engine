@@ -44,20 +44,35 @@ function sendEngineCommand(cmd) {
     }
 }
 
+let isEngineSearching = false;
+let searchTimeout = null;
+
 // Helper to query engine with position and search depth
 function queryEngineMove(fen, depth, callback) {
     if (!engineProcess) startEngine();
 
+    if (isEngineSearching && searchTimeout) {
+        clearTimeout(searchTimeout);
+    }
+    isEngineSearching = true;
+
     let lastScore = 0;
     let lastPv = [];
     let bestMove = null;
+
+    const cleanup = () => {
+        if (searchTimeout) clearTimeout(searchTimeout);
+        searchTimeout = null;
+        currentCallback = null;
+        engineOutputBuffer = '';
+        isEngineSearching = false;
+    };
 
     const onData = (data) => {
         const lines = engineOutputBuffer.split('\n');
         for (let line of lines) {
             line = line.trim();
             if (line.startsWith('info depth')) {
-                // Parse score
                 const cpMatch = line.match(/score cp (-?\d+)/);
                 if (cpMatch) lastScore = parseInt(cpMatch[1], 10);
 
@@ -67,7 +82,6 @@ function queryEngineMove(fen, depth, callback) {
                     lastScore = m > 0 ? 10000 - m : -10000 - m;
                 }
 
-                // Parse PV line
                 const pvIndex = line.indexOf(' pv ');
                 if (pvIndex !== -1) {
                     lastPv = line.substring(pvIndex + 4).trim().split(' ');
@@ -76,10 +90,7 @@ function queryEngineMove(fen, depth, callback) {
                 const parts = line.split(' ');
                 bestMove = parts[1];
 
-                // Done! Clean up and return response
-                currentCallback = null;
-                engineOutputBuffer = '';
-
+                cleanup();
                 callback({
                     bestmove: bestMove,
                     score: lastScore,
@@ -90,6 +101,18 @@ function queryEngineMove(fen, depth, callback) {
             }
         }
     };
+
+    searchTimeout = setTimeout(() => {
+        console.warn('[Server] Engine search timeout, stopping engine...');
+        sendEngineCommand('stop');
+        cleanup();
+        callback({
+            bestmove: '0000',
+            score: 0,
+            depth: depth,
+            pv: []
+        });
+    }, 10000);
 
     engineOutputBuffer = '';
     currentCallback = onData;

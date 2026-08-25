@@ -12,6 +12,8 @@ const int castling_rights_mask[64] = {
 };
 
 int make_move(Position *pos, Move move) {
+    if (pos->his_ply >= 1000) return 0;
+
     int from = MOVE_FROM(move);
     int to = MOVE_TO(move);
     int piece = MOVE_PIECE(move);

@@ -789,6 +789,11 @@ function triggerEngineMove() {
     game.isSearching = true;
     const fen = game.generateFen();
 
+    const searchTimer = setTimeout(() => {
+        console.warn('Engine search safety timer triggered.');
+        game.isSearching = false;
+    }, 12000);
+
     fetch('/api/bestmove', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -796,6 +801,7 @@ function triggerEngineMove() {
     })
     .then(res => res.json())
     .then(data => {
+        clearTimeout(searchTimer);
         game.isSearching = false;
 
         if (data.bestmove && data.bestmove !== '0000') {
@@ -810,6 +816,7 @@ function triggerEngineMove() {
     })
     .catch(err => {
         console.error('Engine API Error:', err);
+        clearTimeout(searchTimer);
         game.isSearching = false;
     });
 }

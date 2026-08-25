@@ -100,6 +100,8 @@ static int quiescence(Position *pos, int alpha, int beta, SearchControl *sc) {
     if ((sc->nodes & 2047) == 0) check_time(sc);
     if (sc->stop_search) return 0;
 
+    if (pos->ply >= MAX_PLY - 1) return evaluate(pos);
+
     int stand_pat = evaluate(pos);
     if (stand_pat >= beta) return beta;
     if (stand_pat > alpha) alpha = stand_pat;
@@ -129,9 +131,11 @@ static int negamax(Position *pos, int alpha, int beta, int depth, SearchControl 
     if ((sc->nodes & 2047) == 0) check_time(sc);
     if (sc->stop_search) return 0;
 
+    if (pos->ply >= MAX_PLY - 1) return evaluate(pos);
+
     int is_root = (pos->ply == 0);
     int in_chk = in_check(pos, pos->side);
-    if (in_chk) depth++;
+    if (in_chk && depth < 32) depth++;
 
     if (depth <= 0) return quiescence(pos, alpha, beta, sc);
 
