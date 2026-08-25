@@ -530,7 +530,71 @@ class ChessGame {
             sfx.playMove();
         }
 
+        // Check for Game Over (Checkmate / Stalemate / 50-move rule)
+        this.checkGameOver();
+
         return true;
+    }
+
+    findKing(color) {
+        const k = color === 'w' ? 'K' : 'k';
+        for (let i = 0; i < 64; i++) {
+            if (this.board[i] === k) return i;
+        }
+        return -1;
+    }
+
+    checkGameOver() {
+        let hasAnyLegalMove = false;
+        for (let sq = 0; sq < 64; sq++) {
+            const piece = this.board[sq];
+            if (piece && this.getPieceColor(piece) === this.side) {
+                const moves = this.getLegalMovesForSquare(sq);
+                if (moves.length > 0) {
+                    hasAnyLegalMove = true;
+                    break;
+                }
+            }
+        }
+
+        if (!hasAnyLegalMove) {
+            this.isGameOver = true;
+            const kingSq = this.findKing(this.side);
+            const inChk = kingSq !== -1 ? this.isSquareAttacked(kingSq, this.side === 'w' ? 'b' : 'w') : false;
+
+            const modal = document.getElementById('gameOverModal');
+            const titleEl = document.getElementById('gameOverTitle');
+            const reasonEl = document.getElementById('gameOverReason');
+
+            if (inChk) {
+                const winner = this.side === 'w' ? 'Black' : 'White';
+                if (titleEl) titleEl.textContent = `Checkmate! 🏆`;
+                if (reasonEl) reasonEl.textContent = `${winner} wins by Checkmate!`;
+            } else {
+                if (titleEl) titleEl.textContent = `Draw! 🤝`;
+                if (reasonEl) reasonEl.textContent = `Stalemate - No legal moves available.`;
+            }
+
+            if (modal) modal.classList.add('active');
+            sfx.playGameOver();
+            return true;
+        }
+
+        if (this.fifty_move >= 100) {
+            this.isGameOver = true;
+            const modal = document.getElementById('gameOverModal');
+            const titleEl = document.getElementById('gameOverTitle');
+            const reasonEl = document.getElementById('gameOverReason');
+
+            if (titleEl) titleEl.textContent = `Draw! 🤝`;
+            if (reasonEl) reasonEl.textContent = `50-move rule exceeded.`;
+
+            if (modal) modal.classList.add('active');
+            sfx.playGameOver();
+            return true;
+        }
+
+        return false;
     }
 
     undo() {
@@ -541,6 +605,7 @@ class ChessGame {
         this.lastMove = lastState.lastMove;
         this.selectedSquare = null;
         this.legalTargets = [];
+        this.isGameOver = false;
         return true;
     }
 }
@@ -685,7 +750,7 @@ function renderBoard() {
 }
 
 function handleSquareClick(sq) {
-    if (game.isSearching) return;
+    if (game.isSearching || game.isGameOver) return;
 
     // Check turn constraints
     if (game.mode === 'human_vs_engine' && game.side !== game.playerColor) {
@@ -749,7 +814,7 @@ function executeUserMove(from, to, promoChar) {
     renderBoard();
     updateUI();
 
-    if (success) {
+    if (success && !game.isGameOver) {
         checkEngineTurn();
     }
 }
@@ -775,7 +840,7 @@ function showPromotionModal(callback) {
 }
 
 function checkEngineTurn() {
-    if (game.mode === 'human_vs_human') return;
+    if (game.isGameOver || game.isSearching || game.mode === 'human_vs_human') return;
 
     const isEngineTurn = (game.mode === 'engine_vs_engine') || (game.mode === 'human_vs_engine' && game.side !== game.playerColor);
 
@@ -785,7 +850,7 @@ function checkEngineTurn() {
 }
 
 function triggerEngineMove() {
-    if (game.isSearching) return;
+    if (game.isSearching || game.isGameOver) return;
 
     game.isSearching = true;
     const fen = game.generateFen();
@@ -810,9 +875,14 @@ function triggerEngineMove() {
             renderBoard();
             updateUI(data.score);
 
-            if (game.mode === 'engine_vs_engine') {
+            if (!game.isGameOver && game.mode === 'engine_vs_engine') {
                 setTimeout(checkEngineTurn, 600);
             }
+        } else {
+            // Engine returned 0000 -> Position is Checkmate or Stalemate
+            game.checkGameOver();
+            renderBoard();
+            updateUI();
         }
     })
     .catch(err => {
