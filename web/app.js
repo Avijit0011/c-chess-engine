@@ -565,6 +565,19 @@ function initUI() {
         game.depth = parseInt(e.target.value, 10);
     });
 
+    // Theme selector
+    const savedTheme = localStorage.getItem('chess_theme') || 'slate';
+    document.body.setAttribute('data-theme', savedTheme);
+    const themeSelect = document.getElementById('themeSelect');
+    if (themeSelect) {
+        themeSelect.value = savedTheme;
+        themeSelect.addEventListener('change', (e) => {
+            const theme = e.target.value;
+            document.body.setAttribute('data-theme', theme);
+            localStorage.setItem('chess_theme', theme);
+        });
+    }
+
     document.getElementById('btnNewGame').addEventListener('click', () => {
         game.reset();
         renderBoard();
