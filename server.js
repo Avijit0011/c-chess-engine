@@ -122,7 +122,7 @@ function queryEngineMove(fen, depth, callback) {
             depth: depth,
             pv: []
         });
-    }, 10000);
+    }, 15000);
 
     currentCallback = checkOutput;
 

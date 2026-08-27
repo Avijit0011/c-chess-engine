@@ -87,7 +87,7 @@ typedef struct {
     int ply;                // Search ply depth
     int his_ply;            // Game history ply depth
     uint64_t hash_key;      // Zobrist position hash key
-    Undo history[1024];     // History stack for undoing moves
+    Undo history[2048];     // History stack for undoing moves
 } Position;
 
 #endif // DEFS_H

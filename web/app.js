@@ -544,6 +544,18 @@ class ChessGame {
         return -1;
     }
 
+    getRepetitionCount() {
+        const currentFenKey = this.generateFen().split(' ').slice(0, 4).join(' ');
+        let count = 1;
+        for (let i = 0; i < this.history.length; i++) {
+            const hFenKey = this.history[i].fen.split(' ').slice(0, 4).join(' ');
+            if (hFenKey === currentFenKey) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     checkGameOver() {
         let hasAnyLegalMove = false;
         for (let sq = 0; sq < 64; sq++) {
@@ -574,6 +586,20 @@ class ChessGame {
                 if (titleEl) titleEl.textContent = `Draw! 🤝`;
                 if (reasonEl) reasonEl.textContent = `Stalemate - No legal moves available.`;
             }
+
+            if (modal) modal.classList.add('active');
+            sfx.playGameOver();
+            return true;
+        }
+
+        if (this.getRepetitionCount() >= 3) {
+            this.isGameOver = true;
+            const modal = document.getElementById('gameOverModal');
+            const titleEl = document.getElementById('gameOverTitle');
+            const reasonEl = document.getElementById('gameOverReason');
+
+            if (titleEl) titleEl.textContent = `Draw! 🤝`;
+            if (reasonEl) reasonEl.textContent = `Draw by Threefold Repetition.`;
 
             if (modal) modal.classList.add('active');
             sfx.playGameOver();
@@ -884,10 +910,15 @@ function triggerEngineMove() {
                 setTimeout(checkEngineTurn, 600);
             }
         } else {
-            // Engine returned 0000 -> Position is Checkmate or Stalemate
-            game.checkGameOver();
+            // Engine returned 0000 -> Check if position is actually Game Over
+            const isOver = game.checkGameOver();
             renderBoard();
             updateUI();
+
+            if (!isOver && (game.mode === 'engine_vs_engine' || (game.mode === 'human_vs_engine' && game.side !== game.playerColor))) {
+                console.warn('Engine returned 0000 but position is not game over. Retrying engine move...');
+                setTimeout(checkEngineTurn, 500);
+            }
         }
     })
     .catch(err => {

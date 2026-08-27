@@ -65,7 +65,7 @@ void write_tt(uint64_t hash_key, int depth, int flag, int score, Move best_move,
         entry->depth = depth;
         entry->flag = flag;
         entry->score = score;
-        if (best_move != 0) {
+        if (best_move != 0 || entry->hash_key != hash_key) {
             entry->best_move = best_move;
         }
     }

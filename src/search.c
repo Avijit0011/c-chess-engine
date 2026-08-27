@@ -95,6 +95,18 @@ static void sort_moves(Position *pos, MoveList *list, Move tt_move) {
     }
 }
 
+static int is_repetition(const Position *pos) {
+    int start = pos->his_ply - pos->fifty_move;
+    if (start < 0) start = 0;
+
+    for (int i = pos->his_ply - 2; i >= start; i -= 2) {
+        if (pos->history[i].hash_key == pos->hash_key) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int quiescence(Position *pos, int alpha, int beta, SearchControl *sc) {
     sc->nodes++;
     if ((sc->nodes & 2047) == 0) check_time(sc);
@@ -102,17 +114,27 @@ static int quiescence(Position *pos, int alpha, int beta, SearchControl *sc) {
 
     if (pos->ply >= MAX_PLY - 1) return evaluate(pos);
 
-    int stand_pat = evaluate(pos);
-    if (stand_pat >= beta) return beta;
-    if (stand_pat > alpha) alpha = stand_pat;
+    int in_chk = in_check(pos, pos->side);
+
+    if (!in_chk) {
+        int stand_pat = evaluate(pos);
+        if (stand_pat >= beta) return beta;
+        if (stand_pat > alpha) alpha = stand_pat;
+    }
 
     MoveList list;
-    generate_captures(pos, &list);
+    if (in_chk) {
+        generate_moves(pos, &list);
+    } else {
+        generate_captures(pos, &list);
+    }
     sort_moves(pos, &list, 0);
 
+    int legal_moves = 0;
     for (int i = 0; i < list.count; i++) {
         Move m = list.moves[i];
         if (!make_move(pos, m)) continue;
+        legal_moves++;
 
         int score = -quiescence(pos, -beta, -alpha, sc);
         unmake_move(pos, m);
@@ -121,6 +143,10 @@ static int quiescence(Position *pos, int alpha, int beta, SearchControl *sc) {
 
         if (score >= beta) return beta;
         if (score > alpha) alpha = score;
+    }
+
+    if (in_chk && legal_moves == 0) {
+        return -MATE_SCORE + pos->ply;
     }
 
     return alpha;
@@ -140,7 +166,7 @@ static int negamax(Position *pos, int alpha, int beta, int depth, SearchControl 
     if (depth <= 0) return quiescence(pos, alpha, beta, sc);
 
     // 50-move rule / repetition check
-    if (!is_root && (pos->fifty_move >= 100)) return 0;
+    if (!is_root && (pos->fifty_move >= 100 || is_repetition(pos))) return 0;
 
     // Transposition Table lookup
     Move tt_move = 0;
@@ -148,7 +174,10 @@ static int negamax(Position *pos, int alpha, int beta, int depth, SearchControl 
     if (!is_root && tt_score != 100000) return tt_score;
 
     // Null Move Pruning
-    if (depth >= 3 && !in_chk && !is_root && (pos->occupancy[pos->side] & ~pos->bitboards[(pos->side == WHITE ? P : p) - 1])) {
+    Bitboard non_pawns = pos->occupancy[pos->side] &
+                        ~pos->bitboards[(pos->side == WHITE ? P : p) - 1] &
+                        ~pos->bitboards[(pos->side == WHITE ? K : k) - 1];
+    if (depth >= 3 && !in_chk && !is_root && non_pawns != 0ULL) {
         make_null_move(pos);
         int null_score = -negamax(pos, -beta, -beta + 1, depth - 1 - 2, sc);
         unmake_null_move(pos);
@@ -285,6 +314,19 @@ Move search_position(Position *pos, SearchControl *sc) {
         fflush(stdout);
 
         if (score > IS_MATE || score < -IS_MATE) break;
+    }
+
+    // Safety Fallback: If TT failed to yield a best move but legal moves exist, pick the first legal move.
+    if (best_move == 0) {
+        MoveList list;
+        generate_moves(pos, &list);
+        for (int i = 0; i < list.count; i++) {
+            if (make_move(pos, list.moves[i])) {
+                unmake_move(pos, list.moves[i]);
+                best_move = list.moves[i];
+                break;
+            }
+        }
     }
 
     return best_move;
